@@ -162,6 +162,7 @@ cython_debug/
 #.idea/
 
 ### Exclude dataset files, tmp, and cache produced from simulations
-datasets/
+/datasets/**
+!datasets/README.md
 .cache/
 tmp/

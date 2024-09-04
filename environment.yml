@@ -1,0 +1,21 @@
+name: automind
+channels:
+  - defaults
+  - conda-forge
+  - anaconda
+dependencies:
+  - python=3.11
+  - jupyterlab
+  - ipywidgets
+  - brian2
+  - scikit-learn
+  - numba
+  - seaborn
+  - hdf5
+  # - pytables
+  - pip
+  - pip:
+      - sbi==0.22.0
+      - hydra-core
+      # - allensdk
+      - -e .

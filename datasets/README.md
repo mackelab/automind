@@ -28,6 +28,7 @@ Alternatively, files can be individually downloaded and manually organized in th
 - `allenvc_summary.csv`: population firing rate PSD of Neuropixels recordings.
 - `synthetic_summary.csv`: various summary features of synthetic observations (i.e., held-out network simulations).
 - `organoid_summary.csv`: population firing burst statistics of organoid multi-electrode array recordings. 
+- `example_raw_data.npz`: raw spike train data from an example organoid recording. 
 
 ---
 

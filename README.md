@@ -23,7 +23,9 @@ conda activate automind
 ```
 
 The codebase will be updated over the next few weeks to enable successive capabilities:
-- [x]  **Inference**: sampling from included trained DGMs conditioning on the same summary statistics of example or new target observations (see [**Demo-1**](./notebooks/demo-1_automind_inference_workflow.ipynb)).
+- [x]  **Inference**: sampling from included trained DGMs conditioning on the same summary statistics of example or new target observations:
+  - [**Demo-1**](./notebooks/demo-1_automind_inference_workflow.ipynb) on a synthetic target using PSD features.
+  - [**Demo-2**](./notebooks/demo-2_automind_inference_from_spikes.ipynb) on a real recording using network burst features, starting from spike timestamps.
 - [ ]  **Training**: training new DGMs on a different set of summary statistics or simulations.
 - [ ]  **Parallel simulations**: running and saving many simulations to disk, e.g., on compute cluster.
 - [ ]  **Analysis**: Analyzing and visualizing discovered parameter configurations.

@@ -1,6 +1,7 @@
 ### Brian2 models for network construction.
 import brian2 as b2
 import numpy as np
+from automind.sim import b2_inputs
 
 
 def adaptive_exp_net(all_param_dict):
@@ -64,14 +65,14 @@ def adaptive_exp_net(all_param_dict):
     )
 
     ### TO DO: also randomly initialize w to either randint(?)*b or randn*(v-v_rest)*a
-
-    poisson_input_E = b2.PoissonInput(
+    '''    poisson_input_E = b2.PoissonInput(
         target=E_pop,
         target_var="ge",
         N=param_dict_neuron_E["N_poisson"],
         rate=param_dict_neuron_E["poisson_rate"],
         weight=param_dict_neuron_E["Q_poisson"],
-    )
+    )'''
+
 
     if has_inh:
         # make adlif if delta_t is 0, otherwise adex
@@ -268,12 +269,21 @@ def make_clustered_network(
     return membership, shared_membership, conn_in, conn_out
 
 
-def adaptive_exp_net_clustered(all_param_dict):
-    """Adaptive exponential integrate-and-fire network with clustered connections."""
+#Modified function incorporating inputs to specific clusters 
+def adaptive_exp_net_clustered_cog(all_param_dict, mode='default', custom_input=None, stim_cluster=None, custom_cluster_input=None):
+    '''
+    Adaptive exponential integrate-and-fire network with clustered connections.
+
+    3 modes
+    - Default mode - no input
+    - Single mode - Single input -> User can define any input sequence. DM_simple is used when no inputs are provided
+    - Cluster mode - Each cluster gets different input, can be defined by user. DM_simple with different mean is used for each cluster when no inputs are provided. 
+                   - Can also select number of clusters to stimulate 
+    '''
+
     # separate parameter dictionaries
     param_dict_net = all_param_dict["params_net"]
     param_dict_settings = all_param_dict["params_settings"]
-
     # set random seeds
     b2.seed(param_dict_settings["random_seed"])
     np.random.seed(param_dict_settings["random_seed"])
@@ -287,11 +297,16 @@ def adaptive_exp_net_clustered(all_param_dict):
 
     #### NETWORK CONSTRUCTION ############
     ######################################
+
+    ### get cell counts
+    N_pop, exc_prop = param_dict_net["N_pop"], param_dict_net["exc_prop"]
+    N_exc = int(N_pop * exc_prop)
+    N_inh = N_pop - N_exc
+
     ### define neuron equation
     adex_coba_eq = """dv/dt = (-g_L * (v - v_rest) + g_L * delta_T * exp((v - v_thresh)/delta_T) - w + I)/C : volt (unless refractory)"""
-    adlif_coba_eq = (
-        """dv/dt = (-g_L * (v - v_rest) - w + I)/C : volt (unless refractory)"""
-    )
+
+    adlif_coba_eq = """dv/dt = (-g_L * (v - v_rest) - w + I)/C : volt (unless refractory)"""
 
     network_eqs = """            
             dw/dt = (-w + a * (v - v_rest))/tau_w : amp
@@ -299,12 +314,9 @@ def adaptive_exp_net_clustered(all_param_dict):
             dgi/dt = -gi / tau_gi : siemens
             Ie = ge * (E_ge - v): amp
             Ii = gi * (E_gi - v): amp
-            I = I_bias + Ie + Ii : amp
+            I_ext: amp 
+            I = I_bias + Ie + Ii + I_ext: amp
             """
-
-    ### get cell counts
-    N_pop, exc_prop = param_dict_net["N_pop"], param_dict_net["exc_prop"]
-    N_exc, N_inh = int(N_pop * exc_prop), int(N_pop * (1 - exc_prop))
 
     ### make neuron populations, set initial values and connect poisson inputs ###
     # make adlif if delta_t is 0, otherwise adex
@@ -422,6 +434,7 @@ def adaptive_exp_net_clustered(all_param_dict):
             p_out,
             param_dict_net["order_clusters"],
         )
+        param_dict_net["membership"] = membership
 
         # scale synaptic weight
         Q_ge_out = param_dict_neuron_E["Q_ge"]
@@ -491,6 +504,93 @@ def adaptive_exp_net_clustered(all_param_dict):
         )
         syn_i2i.connect("i!=j", p=param_dict_net["p_i2i"])
 
+    ### Handle different input modes ### 
+    if mode == 'default': #No input
+        stim_time_values = b2_inputs.DM_simple(all_param_dict,0,0) #Just change this to an input (pass in an stim array)
+        dt = param_dict_settings["dt"]
+        stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
+
+        # Define network operation to update I_ext
+        @b2.network_operation(dt=dt)
+        def update_test_input(t):
+            E_pop.I_ext = stim_timed_array(t)
+            
+    elif mode == 'single':
+    # Check if custom input is provided in the parameter dictionary
+        custom_input = all_param_dict.get("custom_input", None)
+        if custom_input is not None:
+            stim_time_values = custom_input
+        else:
+            # Use default DM_simple if no custom input is provided
+            stim_time_values = b2_inputs.DM_simple(all_param_dict)
+        
+        dt = param_dict_settings["dt"]
+        stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
+
+        # Define network operation to update I_ext
+        @b2.network_operation(dt=dt)
+        def update_test_input(t):
+            E_pop.I_ext = stim_timed_array(t)
+
+    elif mode == 'cluster':
+    # Determine if network has clusters 
+        has_clusters = (
+        "n_clusters" in param_dict_net.keys() 
+        and param_dict_net["n_clusters"] >= 2 
+        and param_dict_net["R_pe2e"] != 1
+        )
+
+        if has_clusters:
+            n_clusters_original = int(param_dict_net["n_clusters"])
+            stimulated_clusters_count = n_clusters_original
+
+            #Check if user defined number of clusters to stimulate
+            if stim_cluster is not None:
+                stimulated_clusters_count = stim_cluster
+                if stim_cluster > n_clusters_original:
+                    stimulated_clusters_count = n_clusters_original
+                    print(f"No. of clusters picked ({stim_cluster}) exceeds actual no. of clusters. Stimulating all {n_clusters_original} clusters instead.")
+                #Select number of clusters 
+            selected_clusters = np.random.choice(
+                n_clusters_original, 
+                stimulated_clusters_count, 
+                replace=False
+            ) 
+            cluster_lists = [[c] for c in selected_clusters] 
+
+            # Generate cluster-specific inputs for selected clusters - see b2_inputs
+            if custom_cluster_input is not None:
+                stim_list = custom_cluster_input
+                _, weight_list = b2_inputs.cluster_specific_stim(
+                    all_param_dict,
+                    n_clusters=stimulated_clusters_count,
+                )
+            else:
+                stim_list, weight_list = b2_inputs.cluster_specific_stim(
+                    all_param_dict,
+                    n_clusters=stimulated_clusters_count,
+                )
+                
+            # Create input configurations
+            input_configs = b2_inputs.get_input_configs(
+                    cluster_lists,
+                    stim_list,
+                    weight_list,
+                )
+            input_op = b2_inputs.create_input_operation(E_pop, input_configs, membership)
+            param_dict_net['input'] = stim_list
+        else:
+            # Fallback to test mode if network doesn't have clusters initially
+            print("Network does not have clusters. All neurons will receive the same DM_simple input ")
+            stim_time_values = b2_inputs.test_stim(all_param_dict)
+            dt = param_dict_settings["dt"]
+            stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
+
+            @b2.network_operation(dt=dt)
+            def update_cluster_fallback_input(t):
+                E_pop.I_ext = stim_timed_array(t)
+            param_dict_net['input'] = stim_timed_array
+
     ### define monitors ###
     rate_monitors, spike_monitors, trace_monitors = [], [], []
     rec_defs = param_dict_settings["record_defs"]
@@ -510,12 +610,12 @@ def adaptive_exp_net_clustered(all_param_dict):
                     # and later drop randomly before saving, otherwise
                     # recording only from first n neurons, which heavily overlap
                     # with those stimulated, and the first few clusters
-                    rec_idx = np.arange(N_exc)
+                    rec_idx = np.arange(N_exc) 
                 else:
                     rec_idx = (
-                        np.arange(rec_defs[pop_name]["spikes"])
+                        np.arange(rec_defs[pop_name]["spikes"]) 
                         if type(rec_defs[pop_name]["spikes"]) is int
-                        else rec_defs[pop_name]["spikes"]
+                        else rec_defs[pop_name]["spikes"] #Change param_settings.record_Defs to 2000
                     )
                 spike_monitors.append(
                     b2.SpikeMonitor(pop[rec_idx], name=pop_name + "_spikes")

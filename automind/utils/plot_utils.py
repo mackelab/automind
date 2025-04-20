@@ -327,7 +327,6 @@ def _plot_raster_pretty(
     ax.set_ylabel("Raster", fontsize=fontsize)
     return ax
 
-
 def _plot_rates_pretty(
     rates,
     XL,
@@ -584,3 +583,126 @@ def plot_corr_pv(pvals, ax, alpha_level=0.05, fmt="w*", ms=0.5):
         for j in range(pvals.shape[0]):
             if pvals[i, j] < alpha_level:
                 ax.plot(j, i, fmt, ms=ms, alpha=1)
+
+
+#Just use the default plotting function with the sorted spikes 
+'''
+def plot_raster(
+    spikes,
+    membership,
+    XL,
+    plotting_method="cluster_identity",
+    every_other=1,
+    ax=None,
+    fontsize=14,
+    plot_inh=False,
+    E_colors=None,
+    I_color="gray",
+    single_cluster_style="|",
+    double_cluster_style="x",
+    mew=0.5,
+    ms=1,
+    **plot_kwargs,
+):
+    """
+    Plot raster plot with neurons sorted by cluster identity or number of clusters.
+
+    Parameters:
+        spikes (dict): Dictionary containing 'exc_spikes' and 'inh_spikes'.
+        membership: Array/list of 2D membership arrays (from params_net['membership']).
+        XL (list): X-axis limits.
+        plotting_method (str): "cluster_identity" or "n_clusters".
+        every_other (int): Plot every nth spike.
+        ax (matplotlib axis): Axis to plot on.
+        fontsize (int): Font size for labels.
+        plot_inh (bool): Whether to plot inhibitory spikes.
+        E_colors (list): Colors for excitatory clusters.
+        I_color (str): Color for inhibitory spikes.
+        single_cluster_style (str): Marker style for single-cluster neurons.
+        double_cluster_style (str): Marker style for two-cluster neurons.
+        mew (float): Marker edge width.
+        ms (float): Marker size.
+    """
+    if ax is None:
+        ax = plt.axes()
+
+    exc_spikes = spikes["exc_spikes"]
+    inh_spikes = spikes.get("inh_spikes", {})
+
+    if plotting_method == "cluster_identity":
+        # Sort by cluster identity
+        sorted_indices = data_utils.sort_neurons(membership, sorting_method='cluster_identity')
+        sorted_indices_list = sorted_indices[0].tolist()  # Convert to list of Python integers
+        sorted_exc_spikes = {i: exc_spikes[idx] for i, idx in enumerate(sorted_indices_list)}
+        #exc_spikes_to_plot = sorted_exc_spikes.values()
+    elif plotting_method == "n_clusters":
+        # Sort by number of clusters
+        sorted_indices = data_utils.sort_neurons(membership, sorting_method='n_clusters')
+        sorted_exc_spikes_single = {i: exc_spikes[idx] for i, idx in enumerate(sorted_indices[0][0])}
+        sorted_exc_spikes_double = {i: exc_spikes[idx] for i, idx in enumerate(sorted_indices[1][0])}
+        #exc_spikes_to_plot.append(sorted_exc_spikes_single)
+        #exc_spikes_to_plot.append(sorted_exc_spikes_double)
+    else:
+        raise ValueError("Invalid plotting_method. Use 'cluster_identity' or 'n_clusters'.")
+
+    # Plot excitatory spikes, single cluster in blue and double cluster in red respectively
+    [
+        (
+            ax.plot(
+                v[::every_other],
+                i_v * np.ones_like(v[::every_other]),
+                single_cluster_style,
+                color='blue',
+                alpha=1,
+                ms=ms,
+                mew=mew,
+            )
+            if len(v) > 0
+            else None
+        )
+        for i_v, (t,v) in enumerate(sorted_exc_spikes_single.items())
+    ]
+    [
+        (
+            ax.plot(
+                v[::every_other],
+                (i_v+ len(sorted_indices[0][0])) * np.ones_like(v[::every_other]),
+                single_cluster_style,
+                color='red',
+                alpha=1,
+                ms=ms,
+                mew=mew,
+            )
+            if len(v) > 0
+            else None
+        )
+        for i_v, (t,v) in enumerate(sorted_exc_spikes_double.items())
+    ]
+
+    # Plot inhibitory spikes
+    if plot_inh:
+        [
+            (
+                ax.plot(
+                    v[::every_other],
+                    (i_v + len(sorted_indices[0][0]) + len(sorted_indices[1][0])) * np.ones_like(v[::every_other]),
+                    "|",
+                    color=I_color,
+                    alpha=1,
+                    ms=ms,
+                    mew=mew,
+                )
+                if len(v) > 0
+                else None
+            )
+            for i_v, v in enumerate(inh_spikes.values())
+        ]
+
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.spines.left.set_visible(False)
+    ax.spines.bottom.set_visible(False)
+    ax.set_xlim(XL)
+    ax.set_ylabel("Raster", fontsize=fontsize)
+    return ax
+'''

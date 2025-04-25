@@ -635,7 +635,7 @@ def compute_psd_arr(x, t, nperseg, noverlap_ratio, analysis_window=(0, None)):
         tuple: (frequencies, psd)
     """
     # get parameters
-    fs = 1 / t[1] - t[0]
+    fs = 1 / (t[1] - t[0])
     nperseg = int(fs * nperseg)
     noverlap = int(nperseg * noverlap_ratio)
 

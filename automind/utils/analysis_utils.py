@@ -223,6 +223,9 @@ def compute_summary_features(spikes, params_dict):
         result_collector["summary_bursts"] = df_burst
         result_collector["summary_burst_stats"] = burst_stats
         result_collector["pop_rates"] = pop_rates_smo
+    else:
+        # if no bursts, just return the raw population rates, unsmoothed
+        result_collector["pop_rates"] = pop_rates_raw
 
     ##### get PCA
     if params_dict["params_analysis"]["do_pca"]:

@@ -2,6 +2,23 @@
 import brian2 as b2
 import numpy as np
 
+BRUNEL_DEFAULTS = {
+    "N_pop": 12500,
+    "exc_prop": 0.8,
+    "N_external": 1000,
+    "v_0": None,
+    "v_rest": 0.0 * b2.mV,
+    "v_reset": 10.0 * b2.mV,
+    "v_thresh": 20.0 * b2.mV,
+    "tau_m": 20.0 * b2.ms,
+    "t_refrac": 2.0 * b2.ms,
+    "t_syn_delay": 1.5 * b2.ms,
+    "w0": 0.1 * b2.mV,
+    "p_connect": 0.1,
+    "w_external": 0.1 * b2.mV,    
+    "g": 4,
+    "nu_ext": 1.2,
+}
 
 ADEX_NEURON_DEFAULTS_ZERLAUT = {
     ### parameters taken from Zerlaut et al. 2018, JCompNeurosci

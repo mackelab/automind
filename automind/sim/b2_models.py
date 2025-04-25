@@ -542,3 +542,92 @@ def adaptive_exp_net_clustered(all_param_dict):
     monitors = [rate_monitors, spike_monitors, trace_monitors]
     net_collect.add(monitors)
     return net_collect
+
+
+def brunel_lif_net(all_param_dict):
+    """E:I balanced LIF network from Brunel 2000, JComputNeurosci"""
+    # separate parameter dictionaries
+    param_dict_net = all_param_dict["params_net"]
+    param_dict_settings = all_param_dict["params_settings"]
+
+    # set random seeds
+    b2.seed(param_dict_settings["random_seed"])
+    np.random.seed(param_dict_settings["random_seed"])
+    b2.defaultclock.dt = param_dict_settings["dt"]
+        
+    #### NETWORK CONSTRUCTION ############
+    ### define neuron equation
+    lif_dynamics = """
+    dv/dt = -(v-v_rest) / tau_m : volt (unless refractory)
+    """
+
+    ### Make neuron populations, set initial values
+    N_pop, exc_prop = param_dict_net["N_pop"], param_dict_net["exc_prop"]
+    N_exc = int(N_pop * exc_prop)
+    
+    network = b2.NeuronGroup(
+        N_pop,
+        model=lif_dynamics,
+        threshold="v>v_thresh",
+        reset="v=v_reset", 
+        refractory=param_dict_net['t_refrac'], 
+        method=param_dict_settings["integ_method"],
+        namespace=param_dict_net
+    )
+    network.v = param_dict_net['v_rest'] + np.random.uniform(0,1, size=N_pop) * (param_dict_net['v_thresh'] - param_dict_net['v_rest'])
+    
+    # split populations
+    E_pop, I_pop = network[:N_exc], network[N_exc:]
+    
+    # create synapses
+    w0, t_syn_delay, p_connect = (
+        param_dict_net["w0"],
+        param_dict_net["t_syn_delay"],
+        param_dict_net["p_connect"],
+    )
+    
+    # different E and I synapse strength & record
+    J_exc, J_inh = w0, -param_dict_net["g"] * w0
+    param_dict_net['J_exc'] = J_exc
+    param_dict_net['J_inh'] = J_inh
+
+    syn_e = b2.Synapses(E_pop, target=network, on_pre="v += J_exc", delay=t_syn_delay, namespace=param_dict_net)
+    syn_e.connect('i!=j', p=p_connect)
+    
+    # inhibitory synapses are weighted by g
+    syn_i = b2.Synapses(I_pop, target=network, on_pre="v += J_inh", delay=t_syn_delay, namespace=param_dict_net)
+    syn_i.connect('i!=j', p=p_connect)
+
+    # make input and convert relative rate to absolute rate
+    N_external, w_external = param_dict_net["N_external"], param_dict_net["w_external"]
+    nu_thresh = param_dict_net["v_thresh"] / (N_external * w_external * param_dict_net["tau_m"])
+    poisson_input_rate = param_dict_net["nu_ext"] * nu_thresh
+    poisson_input = b2.PoissonInput(
+        target=network,
+        target_var="v",
+        N=N_external,
+        rate=poisson_input_rate,
+        weight=w_external,
+    )    
+    
+    ### define monitors
+    rate_monitors, spike_monitors, trace_monitors = [], [], []
+    rec_defs = param_dict_settings['record_defs']
+    zipped_pops = zip(['exc', 'inh'],[E_pop, I_pop])
+    for pop_name, pop in zipped_pops:
+        if pop_name in rec_defs.keys():            
+            if rec_defs[pop_name]['rate'] is not False: 
+                rate_monitors.append(b2.PopulationRateMonitor(pop, name=pop_name+'_rate'))
+            if rec_defs[pop_name]['spikes'] is not False:
+                # rec_idx = np.arange(rec_defs[pop_name]['spikes']) if type(rec_defs[pop_name]['spikes']) is int else rec_defs[pop_name]['spikes']
+                spike_monitors.append(b2.SpikeMonitor(pop[:rec_defs[pop_name]['spikes']], name=pop_name+'_spikes'))
+            if rec_defs[pop_name]['trace'] is not False:
+                rec_idx = np.arange(rec_defs[pop_name]['trace'][1]) if type(rec_defs[pop_name]['trace'][1]) is int else rec_defs[pop_name]['trace'][1]                
+                trace_monitors.append(b2.StateMonitor(pop, rec_defs[pop_name]['trace'][0], record=rec_idx, name=pop_name+'_trace'))
+    
+    net_collect = b2.Network(
+            network, poisson_input, 
+            syn_e, syn_i,
+            rate_monitors, spike_monitors, trace_monitors)
+    
+    return net_collect

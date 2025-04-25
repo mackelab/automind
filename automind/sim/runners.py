@@ -11,14 +11,15 @@ from ..utils import data_utils, dist_utils
 from ..sim import b2_interface, default_configs
 
 
-def adex_check_early_stop(net_collect, params_dict, verbose=False):
+def check_early_stop(net_collect, params_dict, verbose=False):
     """
     Check if simulation should be stopped based on firing rate.
     """
     params_analysis = params_dict["params_analysis"]
     params_settings = params_dict["params_settings"]
+    t_refrac_pop = "Epop" if "params_Epop" in params_dict else "net"
     t_refrac = np.array(
-        params_dict["params_Epop"]["t_refrac"]
+        params_dict["params_"+t_refrac_pop]["t_refrac"]
     )  # get refractory period for norming FR
 
     # compute FR stats
@@ -55,7 +56,7 @@ def adex_check_early_stop(net_collect, params_dict, verbose=False):
     return params_dict
 
 
-def run_net_early_stop(net_collect, params_dict):
+def run_net_with_early_stop(net_collect, params_dict):
     """
     Run simulation while checking for early stoppage.
     """
@@ -64,7 +65,7 @@ def run_net_early_stop(net_collect, params_dict):
     if params_dict["params_analysis"]["t_early_stop"]:
         # run for short time and check for min/max firing
         net_collect.run(params_dict["params_analysis"]["t_early_stop"])
-        params_dict = adex_check_early_stop(net_collect, params_dict, verbose=False)
+        params_dict = check_early_stop(net_collect, params_dict, verbose=False)
         # did not stop, continue with sim the rest of the way
         if not params_dict["params_analysis"]["early_stopped"]:
             net_collect.run(
@@ -80,16 +81,14 @@ def run_net_early_stop(net_collect, params_dict):
     return params_dict, net_collect
 
 
-def adex_simulator(params_dict):
+def run_simulator(params_dict):
     """
-    Simulator wrapper for AdEx net, run simulations and collect data.
+    Simulator wrapper for all network types.
     """
-
     print(
         f"{params_dict['params_settings']['batch_seed']}-{params_dict['params_settings']['random_seed']}",
         end="|",
     )
-
     try:
         # set up and run model with early stopping
         network_type = params_dict["params_settings"]["network_type"]
@@ -97,9 +96,11 @@ def adex_simulator(params_dict):
             net_collect = b2_models.adaptive_exp_net(params_dict)
         elif network_type == "adex_clustered":
             net_collect = b2_models.adaptive_exp_net_clustered(params_dict)
+        elif network_type == "brunel":
+            net_collect = b2_models.brunel_lif_net(params_dict)
 
         # run the model
-        params_dict, net_collect = run_net_early_stop(net_collect, params_dict)
+        params_dict, net_collect = run_net_with_early_stop(net_collect, params_dict)
 
         # return pickleable outputs for pool
         spikes, timeseries = data_utils.collect_raw_data(net_collect, params_dict)
@@ -149,6 +150,29 @@ def construct_experiment_settings_adex(update_dict=None):
     # set some final configurations
     b2_interface.set_adaptive_vcut(params_dict["params_Epop"])
     b2_interface.set_adaptive_vcut(params_dict["params_Ipop"])
+    return params_dict
+
+def construct_experiment_settings_brunel(update_dict=None):
+    #### grab default configs and fill in
+    params_net = default_configs.BRUNEL_DEFAULTS.copy()
+    params_analysis = default_configs.ANALYSIS_DEFAULTS.copy()
+    params_settings = default_configs.SIM_SETTINGS_DEFAULTS.copy()
+    params_settings["network_type"]='brunel'
+
+    # network configurations & set up simulation time and clock
+    params_settings["t_sigs"] = int(
+        np.ceil(-np.log10(params_settings["dt"] / b2.second))
+    )
+
+    # collect
+    params_dict = {
+        "params_net": params_net,
+        "params_analysis": params_analysis,
+        "params_settings": params_settings,
+    }
+    # update non-default values
+    if update_dict:
+        params_dict = data_utils.update_params_dict(params_dict, update_dict)
 
     return params_dict
 

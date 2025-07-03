@@ -31,7 +31,7 @@ def check_early_stop(net_collect, params_dict, verbose=False):
 
     df_summary = spikes_summary.return_df_summary(
         query_spikes,
-        params_analysis["analysis_window"],
+        params_analysis["early_stop_window"],
         params_analysis["min_num_spikes"],
     )
 

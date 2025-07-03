@@ -266,9 +266,9 @@ def save_params_priors(path, params_dict, priors):
     with open(path + "params_dict_default.pickle", "wb") as handle:
         pickle.dump(params_dict, handle)
 
-def save_samples_to_csv(df, path, batch_seed, dist_type='prior'):
+def save_samples_to_csv(df, path, batch_seed, dist_type='prior', ending='samples'):
     """Save sampled parameters to CSV file."""
-    df.to_csv(path + f'/{batch_seed}_{dist_type}_samples.csv')
+    df.to_csv(path + f'/{batch_seed}_{dist_type}_{ending}.csv')
 
 
 def process_simulated_samples(sim_collector, df_prior_samples_batch):

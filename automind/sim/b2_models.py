@@ -65,13 +65,13 @@ def adaptive_exp_net(all_param_dict):
     )
 
     ### TO DO: also randomly initialize w to either randint(?)*b or randn*(v-v_rest)*a
-    '''    poisson_input_E = b2.PoissonInput(
+    poisson_input_E = b2.PoissonInput(
         target=E_pop,
         target_var="ge",
         N=param_dict_neuron_E["N_poisson"],
         rate=param_dict_neuron_E["poisson_rate"],
         weight=param_dict_neuron_E["Q_poisson"],
-    )'''
+    )
 
 
     if has_inh:
@@ -270,26 +270,36 @@ def make_clustered_network(
 
 
 #Modified function incorporating inputs to specific clusters 
-def adaptive_exp_net_clustered_cog(all_param_dict, mode='default', custom_input=None, stim_cluster=None, custom_cluster_input=None):
+def adaptive_exp_net_clustered_custom_input(all_param_dict):
     '''
     Adaptive exponential integrate-and-fire network with clustered connections.
 
-    3 modes
-    - Default mode - no input
-    - Single mode - Single input -> User can define any input sequence. DM_simple is used when no inputs are provided
-    - Cluster mode - Each cluster gets different input, can be defined by user. DM_simple with different mean is used for each cluster when no inputs are provided. 
-                   - Can also select number of clusters to stimulate 
+    Args:
+        all_param_dict (dict): Dictionary for simulation parameters.
+        mode (string): Accepts 'default', 'single', or 'cluster'
+        - 'default' mode - no input
+        - 'single' mode - type: array. 
+            Single input array with same length as sim time / dt
+            User can define any input sequence. b2_inputs.DM_simple is used when no inputs are provided
+        - 'cluster' mode - type: List (of arrays). 
+            Each cluster gets different input, can be defined by user. DM_simple with different means is used for each cluster when no inputs are provided. 
+            Can also select number of clusters to stimulate 
+
+        custom_input (arr): Input array with same length as (simulation time / dt)
+        stim_cluster (int): Number of clusters to stimulate
+        custom_cluster_input (list of arrays): List of input arrays, each in the format as custom_input.
     '''
 
     # separate parameter dictionaries
     param_dict_net = all_param_dict["params_net"]
     param_dict_settings = all_param_dict["params_settings"]
+
     # set random seeds
     b2.seed(param_dict_settings["random_seed"])
     np.random.seed(param_dict_settings["random_seed"])
     b2.defaultclock.dt = param_dict_settings["dt"]
-
     param_dict_neuron_E = all_param_dict["params_Epop"]
+
     # check if there is inhibition
     has_inh = False if param_dict_net["exc_prop"] == 1 else True
     if has_inh:
@@ -434,6 +444,8 @@ def adaptive_exp_net_clustered_cog(all_param_dict, mode='default', custom_input=
             p_out,
             param_dict_net["order_clusters"],
         )
+        
+        # Membership not needed outside of function aside from analysis and visualisation and only saved in param_dict_net
         param_dict_net["membership"] = membership
 
         # scale synaptic weight
@@ -505,25 +517,16 @@ def adaptive_exp_net_clustered_cog(all_param_dict, mode='default', custom_input=
         syn_i2i.connect("i!=j", p=param_dict_net["p_i2i"])
 
     ### Handle different input modes ### 
-    if mode == 'default': #No input
-        stim_time_values = b2_inputs.DM_simple(all_param_dict,0,0) #Just change this to an input (pass in an stim array)
-        dt = param_dict_settings["dt"]
-        stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
-
-        # Define network operation to update I_ext
-        @b2.network_operation(dt=dt)
-        def update_test_input(t):
-            E_pop.I_ext = stim_timed_array(t)
+    #!!!Arguments for input modes etc need to be first generated in b2_inputs.generate_input_params!!!
+    param_dict_input = all_param_dict.get("params_input", {"mode": "default"}) #In case params_input is not provided
+    mode = param_dict_input.get("mode")
+    
+    if mode == 'default': #No input (aside from poisson) provided to the network
+        pass
             
     elif mode == 'single':
     # Check if custom input is provided in the parameter dictionary
-        custom_input = all_param_dict.get("custom_input", None)
-        if custom_input is not None:
-            stim_time_values = custom_input
-        else:
-            # Use default DM_simple if no custom input is provided
-            stim_time_values = b2_inputs.DM_simple(all_param_dict)
-        
+        stim_time_values = param_dict_input['single_input']   
         dt = param_dict_settings["dt"]
         stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
 
@@ -532,64 +535,23 @@ def adaptive_exp_net_clustered_cog(all_param_dict, mode='default', custom_input=
         def update_test_input(t):
             E_pop.I_ext = stim_timed_array(t)
 
-    elif mode == 'cluster':
-    # Determine if network has clusters 
-        has_clusters = (
-        "n_clusters" in param_dict_net.keys() 
-        and param_dict_net["n_clusters"] >= 2 
-        and param_dict_net["R_pe2e"] != 1
-        )
+    elif mode == 'cluster': 
+        # Condition check for clusters is moved to b2_inputs.generate_input_params_dict
+        # Select clusters for stimulation 
+        selected_clusters = param_dict_input["selected_clusters"]
+        cluster_lists = [[c] for c in selected_clusters] 
 
-        if has_clusters:
-            n_clusters_original = int(param_dict_net["n_clusters"])
-            stimulated_clusters_count = n_clusters_original
-
-            #Check if user defined number of clusters to stimulate
-            if stim_cluster is not None:
-                stimulated_clusters_count = stim_cluster
-                if stim_cluster > n_clusters_original:
-                    stimulated_clusters_count = n_clusters_original
-                    print(f"No. of clusters picked ({stim_cluster}) exceeds actual no. of clusters. Stimulating all {n_clusters_original} clusters instead.")
-                #Select number of clusters 
-            selected_clusters = np.random.choice(
-                n_clusters_original, 
-                stimulated_clusters_count, 
-                replace=False
-            ) 
-            cluster_lists = [[c] for c in selected_clusters] 
-
-            # Generate cluster-specific inputs for selected clusters - see b2_inputs
-            if custom_cluster_input is not None:
-                stim_list = custom_cluster_input
-                _, weight_list = b2_inputs.cluster_specific_stim(
-                    all_param_dict,
-                    n_clusters=stimulated_clusters_count,
-                )
-            else:
-                stim_list, weight_list = b2_inputs.cluster_specific_stim(
-                    all_param_dict,
-                    n_clusters=stimulated_clusters_count,
-                )
-                
-            # Create input configurations
-            input_configs = b2_inputs.get_input_configs(
-                    cluster_lists,
-                    stim_list,
-                    weight_list,
-                )
-            input_op = b2_inputs.create_input_operation(E_pop, input_configs, membership)
-            param_dict_net['input'] = stim_list
-        else:
-            # Fallback to test mode if network doesn't have clusters initially
-            print("Network does not have clusters. All neurons will receive the same DM_simple input ")
-            stim_time_values = b2_inputs.test_stim(all_param_dict)
-            dt = param_dict_settings["dt"]
-            stim_timed_array = b2.TimedArray(stim_time_values * b2.amp, dt=dt)
-
-            @b2.network_operation(dt=dt)
-            def update_cluster_fallback_input(t):
-                E_pop.I_ext = stim_timed_array(t)
-            param_dict_net['input'] = stim_timed_array
+        # Generate cluster-specific inputs for selected clusters - see b2_inputs
+        stim_list = param_dict_input["cluster_input_list"]
+        weight_list = param_dict_input["cluster_weight_list"]
+            
+        # Create input configurations
+        input_configs = b2_inputs.get_input_configs(
+                cluster_lists,
+                stim_list,
+                weight_list,
+            )
+        input_op = b2_inputs.create_input_operation(E_pop, input_configs, membership)
 
     ### define monitors ###
     rate_monitors, spike_monitors, trace_monitors = [], [], []

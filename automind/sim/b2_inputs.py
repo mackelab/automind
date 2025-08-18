@@ -16,7 +16,114 @@ from sklearn.metrics import (
     auc
 )
 
-def DM_simple(all_param_dict, mu = 10**-9, sigma = 2.5*10**-11, buffer_period = 10, stim_time = 5):
+# Add input parameters as dictionary
+
+def get_n_cluster_to_stim(param_dict, fraction):
+    '''
+    Generatae number of clusters to stimulate based on fraction 
+    Args:
+        param_dict: Existing parameter dicitonary   
+        fraction: Fraction of clusters to stimulate (0-1)
+    '''
+    params_dict_net = param_dict["params_net"]
+    has_clusters = (
+    "n_clusters" in params_dict_net.keys() 
+    and params_dict_net["n_clusters"] >= 2 
+    and params_dict_net["R_pe2e"] != 1
+    )
+    if has_clusters:
+        n_cluster_original = param_dict["params_net"]["n_clusters"]
+        n_cluster_to_stim = int(n_cluster_original * fraction)
+        if n_cluster_to_stim < 1:
+            print("Fraction too low, one cluster will be stimulated.")
+            n_cluster_to_stim = 1
+        elif n_cluster_to_stim > n_cluster_original:
+            raise ValueError(
+                f"Fraction too high, cannot stimulate more clusters ({n_cluster_to_stim}) than available ({n_cluster_original})."
+            )
+    else:
+        print("Network does not have clusters. Using single input mode instead.")
+
+    return n_cluster_to_stim
+
+def generate_params_input_subdict(param_dict, mode="default", single_input=None, 
+                                   n_cluster_to_stim=None, cluster_input_list=None, 
+                                   cluster_weight_list=None, selected_clusters=None):
+    """
+    Add input parameters to params_dict
+    
+    Args:
+        param_dict: Existing parameter dictionary
+        mode: "default", "single", or "cluster"
+        single_input: Input array for single mode (if None, generates rectangle_input)
+        n_cluster_to_stim: Number of clusters to stimulate (defaults to all)
+        cluster_input_list: List of input arrays for each cluster (if None, generates cluster_specific_stim)
+        cluster_weight_list: List of weights for each cluster (if None, generates cluster_specific_stim)
+        selected_clusters: Specific cluster IDs to use (defaults to random selection)
+    
+    Returns:
+        param_dict: Modified parameter dictionary with params_input added
+    """
+    
+    if mode not in ["default", "single", "cluster"]:
+        raise ValueError(f"Invalid mode: '{mode}'. Use 'default', 'single', or 'cluster'.")
+    
+    params_input = {"mode": mode}
+    
+    if mode == "single":
+        # Generate default single input if not provided
+        if single_input is None:
+            single_input = rectangle_input(param_dict)
+            print("Generated default rectangle input for single mode")
+        params_input["single_input"] = single_input
+        
+    elif mode == "cluster":
+        # Check if network has clusters
+        params_net = param_dict["params_net"]
+        if not (params_net.get("n_clusters", 0) >= 2 and params_net.get("R_pe2e") != 1): #No clusters
+            print("Warning: Network has no clusters. Switching to single mode.")
+            params_input["mode"] = "single"
+            single_input = rectangle_input(param_dict)
+            print("Generated default rectangle input for fallback single mode")
+            params_input["single_input"] = single_input
+        else:
+            n_total_clusters = int(params_net["n_clusters"])
+            
+            # Default to all clusters if not specified
+            if n_cluster_to_stim is None:
+                n_cluster_to_stim = n_total_clusters
+                print(f"Using all {n_total_clusters} clusters")
+            
+            # Generate default cluster inputs if not provided
+            if cluster_input_list is None or cluster_weight_list is None:
+                cluster_input_list, cluster_weight_list = cluster_specific_stim(
+                    param_dict, n_cluster_to_stim
+                )
+                print(f"Generated default cluster-specific stimuli for {n_cluster_to_stim} clusters")
+            
+            # Default to random selection if not specified
+            if selected_clusters is None:
+                selected_clusters = np.random.choice(n_total_clusters, n_cluster_to_stim, replace=False)
+                print(f"Randomly selected clusters: {selected_clusters}")
+            
+            # Validate inputs match number of clusters to stimulate
+            if len(cluster_input_list) != n_cluster_to_stim:
+                raise ValueError(f"cluster_input_list length ({len(cluster_input_list)}) != n_cluster_to_stim ({n_cluster_to_stim})")
+            
+            if len(cluster_weight_list) != n_cluster_to_stim:
+                raise ValueError(f"cluster_weight_list length ({len(cluster_weight_list)}) != n_cluster_to_stim ({n_cluster_to_stim})")
+            
+            params_input.update({
+                "n_clusters_to_stim": n_cluster_to_stim,
+                "cluster_input_list": cluster_input_list,
+                "cluster_weight_list": cluster_weight_list,
+                "selected_clusters": selected_clusters,
+            })
+    
+    param_dict["params_input"] = params_input
+    return param_dict
+
+def rectangle_input(all_param_dict, mu = 10**-9, sigma = 2.5*10**-11, buffer_period = 10, stim_time = 5):
     """   
     Inputs: 
     params_dict: dt and sim_time 
@@ -28,7 +135,7 @@ def DM_simple(all_param_dict, mu = 10**-9, sigma = 2.5*10**-11, buffer_period = 
     stim_time (in seconds): How long the stimulus is applied 
 
     Returns: 
-    A Gaussian stimulus lower bounded at 0
+    A rectangle stimulus lower bounded at 0
     """
     param_dict_settings = all_param_dict["params_settings"]
 
@@ -45,11 +152,11 @@ def DM_simple(all_param_dict, mu = 10**-9, sigma = 2.5*10**-11, buffer_period = 
         raise ValueError("Stimulus steps exceed total simulation steps.")
     stim = np.zeros(total_steps)
     stim[buffer_period:buffer_period+stim_steps] = np.random.normal(mu, sigma, stim_steps)
-    stim = np.maximum(stim,0)  #Lower bound signal at 0 - not necessary (?)
+    stim = np.maximum(stim,0) #Lower bound at 0
     return stim
 
-#Optional stimuli, buffer period, 
-def test_stim(all_param_dict, buffer_period=10, vals=None, pulse_length=1):
+#Use this to find input output range of network
+def sequential_input(all_param_dict, buffer_period=10, vals = np.linspace(10**-10, 2.5*10**-9, 25), pulse_length = 1, interpulse_length = 1):
     '''
     Outputs a stimulus flickering between zero and provided input strengths.
     
@@ -60,7 +167,8 @@ def test_stim(all_param_dict, buffer_period=10, vals=None, pulse_length=1):
     buffer_period: Initial buffer period in seconds before stimulation starts (default: 10s)
     vals: Array of stimulation amplitudes to use (default: np.linspace(10**-10, 2.5*10**-9, 25))
     pulse_length: Length of each pulse in seconds (default: 1s)
-    Default setting should give an input of around 60 seconds (including buffer)
+    interpulse_length: Length of the interval between pulses in seconds (default: 1s)
+    Stim time depends on all_param_dict. Around 60s of stim time is sufficient for all pulses to be used under default settings
     Returns:
     --------
     stim : numpy.ndarray
@@ -69,26 +177,21 @@ def test_stim(all_param_dict, buffer_period=10, vals=None, pulse_length=1):
 
     param_dict_settings = all_param_dict["params_settings"]
     
-    # Set random seeds
-    b2.seed(param_dict_settings["random_seed"])
+    #Get dt and sim_time
     dt = param_dict_settings["dt"]
-
+    
     # Convert time values to steps
     one_second = int(b2.second / dt)
     pulse_length_steps = int(pulse_length * one_second)
+    interpulse_length_steps = int(interpulse_length * one_second)
     buffer_period_steps = int(buffer_period * one_second)
     total_steps = int(param_dict_settings['sim_time'] / dt)
     
-    # Set default values if not provided
-    if vals is None:
-        vals = np.linspace(10**-10, 2.5*10**-9, 25)
-    
-    # Initialise stimulus array
     stim = np.zeros(total_steps)
     
     # Calculate how many full cycles we can fit after the buffer period
     available_steps = total_steps - buffer_period_steps
-    cycle_length = 2 * pulse_length_steps  # ON then OFF
+    cycle_length = pulse_length_steps + interpulse_length_steps # ON then OFF
 
     if len(vals) > available_steps // cycle_length:
         usable_vals = available_steps // cycle_length
@@ -102,33 +205,35 @@ def test_stim(all_param_dict, buffer_period=10, vals=None, pulse_length=1):
         if end_idx <= total_steps:  # Safety check
             stim[start_idx:end_idx] = vals[i]
         else:
+            print(f"Warning: Pulse {i+1} with stimulus amplitude {vals[i+1]} exceeds total simulation steps. Stopping early.")
             break
     return stim
 
-def cluster_specific_stim(all_param_dict, n_clusters, means=np.linspace(10**-10,10**-9,25), std = 2.5*10**-11 ):
+def cluster_specific_stim(all_param_dict, n_clusters_to_stim, stim_sec = 5, buffer_sec = 5, means=np.linspace(10**-10,10**-9,25), std = 2.5*10**-11 ):
     """Generate cluster-specific stimuli and weights to be used in input_configs. 
     
     Parameters
     ----------
     all_param_dict: Network parameters
-    n_clusters: Number of clusters
+    n_clusters_to_stim: Number of clusters to stimulate
         
     Returns
     -------
-    stim_list: List of stimulus arrays, one per cluster
-    weight_list: List of weight arrays, one per cluster
+    stim_list: List of stimulus arrays
+    weight_list: List of weight arrays
     """
 
     #Setting param dicts
     param_dict_settings = all_param_dict["params_settings"]
+    b2.seed(param_dict_settings["random_seed"])
     param_dict_net = all_param_dict["params_net"]
     N_exc = int(param_dict_net["N_pop"] * param_dict_net["exc_prop"])
     dt = param_dict_settings["dt"]
 
     #Stimulation length
-    stim_steps = int(5 * b2.second / dt) 
+    stim_steps = int(stim_sec * b2.second / dt) 
     one_second = int(b2.second / dt)
-    buffer_period = 10 * one_second #Allow network to stabilise first
+    buffer_period = buffer_sec * one_second #Allow network to stabilise first
     total_steps = int(param_dict_settings['sim_time'] / dt)
     if stim_steps > total_steps:
         raise ValueError("Stimulus steps exceed total simulation steps.")
@@ -136,14 +241,12 @@ def cluster_specific_stim(all_param_dict, n_clusters, means=np.linspace(10**-10,
     #List of stimuli and weights
     stim_list = []
     weight_list = []
-    np.random.seed(88)
     mean_random = np.random.permutation(means)
-    for i in range(n_clusters):
+    for i in range(n_clusters_to_stim):
         stim = np.zeros(total_steps)
         stim[buffer_period:buffer_period+stim_steps] = np.random.normal(mean_random[i],std, stim_steps)
         stim = np.maximum(stim,0)
         weights = np.ones(N_exc) #Will be masked in get_input_configs(), just need array of ones 
-        
         stim_list.append(stim)
         weight_list.append(weights)
     
@@ -153,14 +256,7 @@ def get_input_configs(cluster_list,stim_list,weight_list):
     '''
     Setting up stimuli and weights for each cluster. 
     '''
-    if cluster_list is None: #Potentially not required as this function will not be called when there are no clusters 
-            return [{
-                'clusters': None,  # Indicates no clusters
-                'stim': [stim_list[0]],
-                'weights': np.ones(len(weight_list[0]))
-            }]
 
-    #Returns dictionary of the variables to be used in the network operation 
     if not (len(cluster_list) == len(stim_list) == len(weight_list)):
         raise ValueError("Must provide equal number of cluster list, stimuli, and weights")
     
@@ -178,7 +274,7 @@ def get_input_configs(cluster_list,stim_list,weight_list):
 
 def create_input_operation(E_pop, input_configs, membership=None):
     """
-    Creates a network operation to handle inputs with flexible clustering. Not usable on outside of simulation.
+    Creates a (vectorised version) network operation to handle inputs with flexible clustering. Not usable outside of simulation.
     
     Parameters
     ----------
@@ -189,52 +285,50 @@ def create_input_operation(E_pop, input_configs, membership=None):
     membership : list of lists, optional
         Cluster membership (if applicable)
     """
+
     N_exc = len(E_pop)
     if membership is not None and len(membership) != N_exc:
         raise ValueError(f"Membership array length {len(membership)} doesn't match number of neurons {N_exc}")
-    # Pre-compute masks for each input
-    input_data = []
-    # Validate input configurations
-    for config in input_configs:
-        if len(config['weights']) < N_exc: #Each set of weights should have the same length as N_exc
-            raise ValueError(f"Weight array length {len(config['weights'])} is smaller than number of neurons {N_exc}")
-        elif config['clusters'] is None:
-            mask = np.ones(N_exc)
-        else:
-            # If membership provided, use cluster-based masking
-            if membership is not None: # Not necessarry as this function will not be called if there are no clusters. But useful if you want to refactor the single input case
-                mask = np.zeros(N_exc)
-                #Provide stimulus to neuron if it is part of the cluster the input is directed to 
-                for neuron_idx in range(N_exc):
-                    if any(cluster in config['clusters'] for cluster in membership[neuron_idx]): #Each neuron has 2 clusters
-                        mask[neuron_idx] = 1
-            else:
-                # If no membership, all neurons in the neurongroup are activated (no mask) 
-                mask = np.zeros(N_exc)
-                mask[config['clusters']] = 1
-        
-        input_data.append({
-            'stimulus': np.array(config['stim']),
-            'weights': np.array(config['weights'][:N_exc]), #Kind of redundant but potentially useful if you want to set random weights 
-            'mask': mask
-        })
     
-    #Input operation based on above parameters 
+    n_inputs = len(input_configs)
+    max_time_steps = max(len(config['stim']) for config in input_configs)
+    
+    #Pre-allocate matrices
+    stimulus_matrix = np.zeros((n_inputs, max_time_steps))
+    effective_weights = np.zeros((n_inputs, N_exc))
+    
+    for i, config in enumerate(input_configs):
+        #Stimulus
+        stim_len = len(config['stim'])
+        stimulus_matrix[i, :stim_len] = config['stim']
+        
+        #Combined weights and mask computation
+        weights = np.array(config['weights'][:N_exc])
+        
+        if membership is not None:
+            target_clusters = np.array(config['clusters'])
+            membership_array = np.array([membership[j] for j in range(N_exc)])
+            
+            #Check if any target cluster is in each neuron's membership
+            mask = np.array([np.any(np.isin(membership_array[j], target_clusters)) 
+                           for j in range(N_exc)])
+        else:
+            mask = np.zeros(N_exc)
+            mask[config['clusters']] = 1
+        
+        effective_weights[i, :] = weights * mask
+    
     @b2.network_operation(dt=b2.defaultclock.dt)
     def input_operation(t):
         idx = int(t / b2.defaultclock.dt)
-        total_input = np.zeros(N_exc) 
-        #Adding the values of the input step by step, looping through the cluster specific stimuli
-        for input_set in input_data: 
-            if idx < len(input_set['stimulus']): 
-                total_input += (input_set['stimulus'][idx] * 
-                              input_set['weights'] * 
-                              input_set['mask'])
-        
-        E_pop.I_ext_ = total_input * b2.amp
+        if idx < max_time_steps:
+            total_input = stimulus_matrix[:, idx] @ effective_weights
+            E_pop.I_ext_ = total_input * b2.amp
+        else:
+            E_pop.I_ext_ = np.zeros(N_exc) * b2.amp
     
     return input_operation
-
+    
 class NeuralDecoder:
     def __init__(self, method='logistic'):
         """
@@ -382,10 +476,6 @@ class NeuralDecoder:
         
 def plot_multiple_decoders(decoder_class, data_sets, input_strengths, test_data, nrows=10, ncols=5, 
                           method='logistic', window_size=10, figsize=(20, 20)):
-
- 
-    import numpy as np
-    import matplotlib.pyplot as plt
 
     fig, axes = plt.subplots(nrows, ncols, figsize=figsize)
     fig.suptitle(f"Neural Decoder Predictions for {len(data_sets)} Sets", fontsize=16)

@@ -41,7 +41,7 @@ def collect_spikes(net_collect, params_dict):
             else:
                 # recorded more than necessary, subselect for saving
                 spike_dict[sm.name] = b2_interface._deunitize_spiketimes(
-                    _filter_spikes_random(spike_trains, n_to_save) # THIS IS WHERE THE NEURONS ARE RANDOMLY DROPPED BEFORE SAVING (AND PLOTTING??)
+                    _filter_spikes_random(spike_trains, n_to_save) 
                 )
     return spike_dict
 

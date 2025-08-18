@@ -17,6 +17,7 @@ from ..utils import dist_utils
 
 def _filter_spikes_random(spike_trains, n_to_save):
     """Filter a subset of spike trains randomly for saving."""
+    np.random.seed(42)
     record_subset = np.sort(
         np.random.choice(len(spike_trains), n_to_save, replace=False)
     )
@@ -33,13 +34,14 @@ def collect_spikes(net_collect, params_dict):
                 sm.name.split("_")[0]
             ]["spikes"]
             n_to_save = pop_save_def if type(pop_save_def) == int else len(pop_save_def)
+            #n_to_save = len(spike_trains)
             if n_to_save == len(spike_trains):
                 # recorded and to-be saved is the same length, go on a per usual
                 spike_dict[sm.name] = b2_interface._deunitize_spiketimes(spike_trains)
             else:
                 # recorded more than necessary, subselect for saving
                 spike_dict[sm.name] = b2_interface._deunitize_spiketimes(
-                    _filter_spikes_random(spike_trains, n_to_save)
+                    _filter_spikes_random(spike_trains, n_to_save) 
                 )
     return spike_dict
 
@@ -674,3 +676,31 @@ def load_df_posteriors(path_dict):
         path_dict["root_path"] + path_dict["params_dict_analysis_updated"]
     )
     return df_posterior_sims, posterior, params_dict_default
+
+def sort_neurons(membership, sorting_method="cluster_identity"):
+    """
+    Sort neurons based on the specified method.
+
+    Parameters:
+        membership (list/array of 2D arrays): Membership arrays for each simulation.
+        sorting_method (str): "cluster_identity" or "n_clusters".
+
+    Returns:
+        sorted_indices (list of arrays): Sorted indices for each simulation.
+    """
+    sorted_indices = []
+    #Sort by whether neurons are in one cluster or two clusters
+    
+    if sorting_method == "cluster_identity":
+        # Sort by the first cluster identity
+        sorted_idx = np.argsort(membership[:, 0])
+        sorted_indices.append(sorted_idx)
+    elif sorting_method == "n_clusters":
+    #Neurons in one cluster have the same values in both columns
+        single = np.where(membership[:,0] == membership[:,1])
+        double = np.where(membership[:,0] != membership[:,1])
+        sorted_indices.append(single)
+        sorted_indices.append(double)
+    else:
+        raise ValueError("Invalid sorting_method. Use 'cluster_identity' or 'n_clusters'.")
+    return sorted_indices

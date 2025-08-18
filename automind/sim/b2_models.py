@@ -275,19 +275,7 @@ def adaptive_exp_net_clustered_custom_input(all_param_dict):
     Adaptive exponential integrate-and-fire network with clustered connections.
 
     Args:
-        all_param_dict (dict): Dictionary for simulation parameters.
-        mode (string): Accepts 'default', 'single', or 'cluster'
-        - 'default' mode - no input
-        - 'single' mode - type: array. 
-            Single input array with same length as sim time / dt
-            User can define any input sequence. b2_inputs.DM_simple is used when no inputs are provided
-        - 'cluster' mode - type: List (of arrays). 
-            Each cluster gets different input, can be defined by user. DM_simple with different means is used for each cluster when no inputs are provided. 
-            Can also select number of clusters to stimulate 
-
-        custom_input (arr): Input array with same length as (simulation time / dt)
-        stim_cluster (int): Number of clusters to stimulate
-        custom_cluster_input (list of arrays): List of input arrays, each in the format as custom_input.
+        all_param_dict (dict): Dictionary for simulation parameters. Input related arguments are moved to b2_inputs.
     '''
 
     # separate parameter dictionaries

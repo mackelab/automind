@@ -250,6 +250,8 @@ def compute_correlations(np_array, method="pearson"):
                 corr, pval = pearsonr(np_array[:, i], np_array[:, j])
             elif method == "spearman":
                 corr, pval = spearmanr(np_array[:, i], np_array[:, j])
+            else:
+                raise ValueError(f"Unsupported correlation method: {method}")
 
             corr_matrix[i, j] = corr_matrix[j, i] = corr
             p_values[i, j] = p_values[j, i] = pval

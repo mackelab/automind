@@ -10,12 +10,14 @@ dependencies:
   - brian2
   - scikit-learn
   - numba
+  - pandas
   - seaborn
-  - hdf5
   # - pytables
+  - h5py  # includes: hdf5
   - pip
+  - uv  # fast pip replacement  
   - pip:
-      - sbi==0.22.0
+      - sbi==0.22.0  # includes: arviz, joblib, matplotlib, numpy, pyknos, pyro-ppl, scipy, torch, tqdm
       - hydra-core
       # - allensdk
       - -e .

@@ -284,3 +284,18 @@ def make_summary_parallel(
 
     # remove streaming file
     os.remove(stream_file_path)
+
+
+def summary_to_df(summary_collector, params_analysis):
+    df_summaries = []
+    for i_s, s in enumerate(summary_collector):    
+        row = []
+        for summary_type in ['spikes', 'bursts', 'pca', 'psd']:
+            if params_analysis['do_' + summary_type]:
+                if summary_type == 'psd':
+                    row.append(s[f'summary_{summary_type}'].loc['exc_rate'].to_frame(name=0).T)
+                else:
+                    row.append(s[f'summary_{summary_type}'])
+
+        df_summaries.append(pd.concat(row, axis=1))
+    return pd.concat(df_summaries)

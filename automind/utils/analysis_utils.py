@@ -223,6 +223,9 @@ def compute_summary_features(spikes, params_dict):
         result_collector["summary_bursts"] = df_burst
         result_collector["summary_burst_stats"] = burst_stats
         result_collector["pop_rates"] = pop_rates_smo
+    else:
+        # if no bursts, just return the raw population rates, unsmoothed
+        result_collector["pop_rates"] = pop_rates_raw
 
     ##### get PCA
     if params_dict["params_analysis"]["do_pca"]:
@@ -247,6 +250,8 @@ def compute_correlations(np_array, method="pearson"):
                 corr, pval = pearsonr(np_array[:, i], np_array[:, j])
             elif method == "spearman":
                 corr, pval = spearmanr(np_array[:, i], np_array[:, j])
+            else:
+                raise ValueError(f"Unsupported correlation method: {method}")
 
             corr_matrix[i, j] = corr_matrix[j, i] = corr
             p_values[i, j] = p_values[j, i] = pval

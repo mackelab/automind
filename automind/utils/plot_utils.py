@@ -388,6 +388,7 @@ def _plot_psd_pretty(
     fontsize=14,
     color=None,
     alpha=1,
+    lw=1,
 ):
     if ax == None:
         ax = plt.axes()
@@ -398,7 +399,7 @@ def _plot_psd_pretty(
         C_dict = {"avgpop_rate": color}
     for pop in pops_to_plot:
         ax.loglog(
-            f_axis, df_psd.loc[pop].values, color=C_dict[pop], lw=0.8, alpha=alpha
+            f_axis, df_psd.loc[pop].values, color=C_dict[pop], lw=lw, alpha=alpha
         )
     ax.set_xticks([1, 10, 100], ["1", "10", "100"])
     ax.set_yticks([])
